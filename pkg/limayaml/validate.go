@@ -417,6 +417,15 @@ func Validate(y *limatype.LimaYAML, warn bool) error {
 		}
 	}
 
+	if y.Audio.Interface != nil {
+		if *y.Audio.Interface != "hda" && *y.Audio.Interface != "virtio" {
+			return fmt.Errorf("invalid audio.interface %q, must be \"hda\" or \"virtio\"", *y.Audio.Interface)
+		}
+		if warn && y.VMType != nil && *y.VMType == limatype.WSL2 {
+			logrus.Warn("`audio.interface` is ignored when using vmType: wsl2")
+		}
+	}
+
 	return errs
 }
 
@@ -605,6 +614,9 @@ func warnExperimental(y *limatype.LimaYAML) {
 	}
 	if y.MountInotify != nil && *y.MountInotify {
 		logrus.Warn("`mountInotify` is experimental")
+	}
+	if y.Audio.Interface != nil && *y.Audio.Interface != "hda" {
+		logrus.Warn("`audio.interface` is experimental")
 	}
 }
 

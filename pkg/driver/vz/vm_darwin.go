@@ -765,26 +765,47 @@ func attachFolderMounts(inst *limatype.Instance, vmConfig *vz.VirtualMachineConf
 }
 
 func attachAudio(inst *limatype.Instance, config *vz.VirtualMachineConfiguration) error {
-	switch *inst.Config.Audio.Device {
-	case "vz", "default":
+	y := inst.Config
+
+	if y.Audio.Device == nil || y.Audio.Interface == nil {
+		return nil
+	}
+
+	audioDev := *y.Audio.Device
+	audioInterface := *y.Audio.Interface
+
+	// If the user explicitly asks for HDA, we gracefully ignore it.
+	if audioInterface == "hda" {
+		logrus.Debug("VZ driver natively uses virtio-sound. Ignoring 'hda' interface request.")
+	}
+
+	soundDeviceConfiguration, err := vz.NewVirtioSoundDeviceConfiguration()
+	if err != nil {
+		return fmt.Errorf("failed to create virtio sound device configuration: %w", err)
+	}
+
+	if audioDev == "vz" || audioDev == "default" {
 		outputStream, err := vz.NewVirtioSoundDeviceHostOutputStreamConfiguration()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create host audio output stream: %w", err)
 		}
-		soundDeviceConfiguration, err := vz.NewVirtioSoundDeviceConfiguration()
+
+		inputStream, err := vz.NewVirtioSoundDeviceHostInputStreamConfiguration()
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create host audio input stream: %w", err)
 		}
-		soundDeviceConfiguration.SetStreams(outputStream)
-		config.SetAudioDevicesVirtualMachineConfiguration([]vz.AudioDeviceConfiguration{
-			soundDeviceConfiguration,
-		})
-		return nil
-	case "", "none":
-		return nil
-	default:
-		return fmt.Errorf("unexpected audio device %q", *inst.Config.Audio.Device)
+
+		soundDeviceConfiguration.SetStreams(outputStream, inputStream)
+	} else if audioDev != "" && audioDev != "none" {
+		return fmt.Errorf("unexpected audio device %q for VZ driver", audioDev)
 	}
+
+	// Note: If audioDev was "none", it attaches the hardware without streams (muted).
+	config.SetAudioDevicesVirtualMachineConfiguration([]vz.AudioDeviceConfiguration{
+		soundDeviceConfiguration,
+	})
+
+	return nil
 }
 
 func attachOtherDevices(inst *limatype.Instance, vmConfig *vz.VirtualMachineConfiguration) error {

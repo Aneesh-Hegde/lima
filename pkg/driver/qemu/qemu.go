@@ -835,19 +835,35 @@ func Cmdline(ctx context.Context, cfg Config) (exe string, args []string, err er
 	input := "mouse"
 
 	// Sound
-	if *y.Audio.Device != "" {
-		id := "default"
-		// audio device
-		audiodev := *y.Audio.Device
-		if audiodev == "default" {
-			audiodev = audioDevice()
+	if y.Audio.Device != nil {
+		audioDev := *y.Audio.Device
+		audioInterface := *y.Audio.Interface
+
+		if audioDev == "" || audioDev == "none" {
+			args = append(args, "-audiodev", "none,id=snd0")
+		} else {
+			if audioDev == "default" {
+				audioDev = audioDevice()
+			}
+			args = append(args, "-audiodev", fmt.Sprintf("%s,id=snd0", audioDev))
 		}
-		audiodev += fmt.Sprintf(",id=%s", id)
-		args = append(args, "-audiodev", audiodev)
-		// audio controller
-		args = append(args, "-device", "ich9-intel-hda")
-		// audio codec
-		args = append(args, "-device", fmt.Sprintf("hda-output,audiodev=%s", id))
+
+		switch audioInterface {
+		case "virtio":
+			minVirtioVersion := semver.New("8.2.0")
+			if version.LessThan(*minVirtioVersion) {
+				logrus.Warnf("virtio-sound requires QEMU 8.2.0 or newer. Falling back to intel-hda.")
+				// We append the HDA hardware directly here instead of mutating the variable
+				args = append(args, "-device", "ich9-intel-hda", "-device", "hda-output,audiodev=snd0")
+			} else {
+				args = append(args, "-device", "virtio-sound-pci,audiodev=snd0")
+			}
+		case "hda":
+			args = append(args,
+				"-device", "ich9-intel-hda",
+				"-device", "hda-output,audiodev=snd0",
+			)
+		}
 	}
 	// Graphics
 	if *y.Video.Display != "" {
